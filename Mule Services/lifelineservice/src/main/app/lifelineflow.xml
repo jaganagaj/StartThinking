@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8009" doc:name="HTTP Listener Configuration"/>
+    <db:mysql-config name="MySQL_Configuration" host="localhost" port="3306" user="root" password="mysql" database="lifeline" doc:name="MySQL Configuration"/>
+    <db:template-query name="InsertUserTemplate" doc:name="Template Query">
+        <db:parameterized-query><![CDATA[INSERT INTO `user` VALUES (
+:loginid,:username,:dob,:bg,:ldn,:mailid,:cn,:auth,27,26,:uo,:co)]]></db:parameterized-query>
+        <db:in-param name="loginid" defaultValue="#[payload.getLoginID()]"/>
+        <db:in-param name="username" defaultValue="#[payload.getName()]"/>
+        <db:in-param name="dob" defaultValue="#[payload.getDateofBirth()]"/>
+        <db:in-param name="bg" defaultValue="#[payload.getBloodGroup()]"/>
+        <db:in-param name="ldn" defaultValue="#[payload.getLastDonatedOn()]"/>
+        <db:in-param name="mailid" defaultValue="#[payload.getEmailID()]"/>
+        <db:in-param name="cn" defaultValue="#[payload.getContactNumber()]"/>
+        <db:in-param name="auth" defaultValue="#[payload.getAuthProvider()]"/>
+        <db:in-param name="uo" defaultValue="#[payload.getUpdatedOn()]"/>
+        <db:in-param name="co" defaultValue="#[payload.getCreatedOn()]"/>
+    </db:template-query>
+   
+   
+    <flow name="lifelineflowFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/*" doc:name="HTTP"/>
+        <jersey:resources doc:name="REST">
+            <component class="com.isteer.lifeline.services.LifelineRestServiceImpl"/>
+        </jersey:resources>
+        <logger message="Request Came from #[message.inboundProperties.'http.request.uri']" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[message.inboundProperties.'http.request.uri' == '/Lifeline/addUser']">
+                <flow-ref name="AddNewUserSubFlow" doc:name="AddNewUserSubFlow"/>
+            </when>
+            <when expression="#[message.inboundProperties.'http.request.uri' == '/Lifeline/bloodRequest']">
+            	 <flow-ref name="NewBloodRequestSubFlow" doc:name="NewBloodRequestSubFlow"/>
+            </when> 
+            <otherwise>
+                <logger message="URI Not found" level="INFO" doc:name="Logger"/>
+                <set-payload value="URI does not exist" mimeType="application/json" doc:name="Set Payload"/>
+            </otherwise>
+            
+        </choice>
+        <logger message="Returned to Main Flow" level="INFO" doc:name="Logger"/>
+    </flow>
+    <sub-flow name="NewBloodRequestSubFlow">
+        <json:json-to-object-transformer returnClass="com.isteer.lifeline.pojos.BloodRequest" doc:name="JSON to Object"/>
+        <logger message="insert into BloodRequest values('#[payload.getRequestID()]','#[payload,getLoginID()]','#[payload.getBloodGroup()]','#[payload.getDonationType()]','#[payload.getWhenNeeded()]',#[payload.getNumUnits()],'#[payload.getPatientName()]','#[payload.getContactPerson()]','#[payload.getContactNumber()]','#[payload.getDoctorName()]','#[payload.getDoctorContact()]','#[payload.getDoctorEmailID()]',#[payload.getCenterID()],#[payload.isSharedInSocialMedia()],'#[payload.getPersonalAppeal()]','#[payload.getCreatedOn()]')" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="BloodGroup" value="#[payload.getBloodGroup()]" doc:name="Variable"/>
+        <db:insert config-ref="MySQL_Configuration" doc:name="Database">
+                <db:dynamic-query><![CDATA[insert into BloodRequest values('#[payload.getRequestID()]','#[payload,getLoginID()]','#[payload.getBloodGroup()]','#[payload.getDonationType()]','#[payload.getWhenNeeded()]',#[payload.getNumUnits()],'#[payload.getPatientName()]','#[payload.getContactPerson()]','#[payload.getContactNumber()]','#[payload.getDoctorName()]','#[payload.getDoctorContact()]','#[payload.getDoctorEmailID()]',#[payload.getCenterID()],#[payload.isSharedInSocialMedia()],'#[payload.getPersonalAppeal()]','#[payload.getCreatedOn()]')]]></db:dynamic-query>
+        </db:insert>
+        <logger message="#[flowVars.BloodGroup]" level="INFO" doc:name="Logger"/>
+        <flow-ref name="FetchDonorsSubFlow" doc:name="FetchDonors"/>
+    </sub-flow>
+    <sub-flow name="FetchDonorsSubFlow">
+        <db:select config-ref="MySQL_Configuration" doc:name="Database">
+            <db:dynamic-query><![CDATA[select * from user where BloodGroup = '#[flowVars.BloodGroup]' LIMIT 5]]></db:dynamic-query>
+        </db:select>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <foreach doc:name="For Each" collection="#[payload]">
+            <logger level="INFO" doc:name="Logger" message="#[payload.LoginID]"/>
+        </foreach>
+    </sub-flow>
+    <sub-flow name="AddNewUserSubFlow">
+        <json:json-to-object-transformer returnClass="com.isteer.lifeline.pojos.UserRequest" doc:name="JSON to Object"/>
+        <db:insert config-ref="MySQL_Configuration" doc:name="AddNewUserRequest">
+            <db:template-query-ref name="InsertUserTemplate"/>
+        </db:insert>
+        <choice doc:name="Choice">
+            <when expression="message.payload == '1'">
+                <logger message="Success #[payload]" level="INFO" doc:name="SuccessLogger"/>
+                <set-payload value="SUCCESS" mimeType="application/json" doc:name="SUCCESS"/>
+            </when>
+            <otherwise>
+                <logger message="Failed" level="INFO" doc:name="FailureLogger"/>
+                <set-payload value="FAILED #[payload]" mimeType="application/json" doc:name="SET FAILED"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+</mule>
