@@ -1,0 +1,27 @@
+#%RAML 0.8
+---
+title: LifelineAPI
+version: 1.0.0
+baseUri: http://localhost:8081/lifelineapi
+documentation: 
+  - title: Lifeline App
+    content:  |
+              This lifeline Api will let users search the blood Donors on real time
+              
+/getUser: 
+  displayName: Get User 
+  #description: |
+  # A simple API to get the username from the given user ID
+  get: 
+    queryParameters: 
+      userid:
+        description:  |
+         ID of the User 
+        type: String
+        required: true
+        example: 1234
+    responses: 
+      200: 
+        body: 
+        description: |
+          User Details
